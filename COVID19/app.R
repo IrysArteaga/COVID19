@@ -185,6 +185,19 @@ country_cases_cumulative_log = function(cv_cases, start_point=c("Date", "Day of 
     ggplotly(g1, tooltip = c("text")) %>% layout(legend = list(font = list(size=11)))
 }
 
+# Function to plot bar chart showing cases per 100,000
+cases_per100k = function(cv_today_150,start_point="Date") {
+    g1 = ggplot(cv_today_150, aes(x = region, y = outcome, fill = region, group =1,
+        text = paste("País:", region, "\n", outcome))) +
+        geom_bar(stat="identity") + 
+        xlab("Países") +
+        ylab("Casos por 100,000 hab.") + theme_bw() + 
+        scale_fill_manual(values=c(country_cols)) +
+        theme(axis.text.x=element_text(angle = -45, hjust = 0), legend.title = element_blank(), legend.position = "", plot.title = element_text(size=10), 
+              plot.margin = margin(5, 12, 5, 5))
+    ggplotly(g1, tooltip = c("text")) %>% layout(legend = list(font = list(size=11)))
+}
+
 # function to plot forecast
 proy<-function(x,y,m,ym){
     P<-forecast(y, level=c(90,95))
@@ -276,7 +289,7 @@ current_death_count = sum(cv_today$deaths)
 
 # create subset for countries with at least 150 cases and Nicaragua
 cv_today_150 = subset(cv_today, cases>=150 | country=="Nicaragua")
-
+as.data.frame(cv_today_150)
 # write current day's data
 write.csv(cv_today %>% select(c(country, date, update, cases, new_cases, deaths, new_deaths,
                                 recovered, new_recovered, active_cases,
@@ -311,7 +324,7 @@ cases_week <- subset(cv_cases, !is.na(continent_level)) %>% group_by(country,wee
     summarise(cases=max(cases),new_cases=sum(new_cases), deaths=max(deaths),new_deaths=sum(new_deaths), days_since_case100=max(days_since_case100), days_since_death10=max(days_since_death10))
 as.data.frame(cases_week)
 
-# cases per week al Continent level
+# cases per week at Continent level
 continent_week <- cases_week %>% group_by(continent_level, weeks) %>%
     summarise(cases=max(cases),new_cases=sum(new_cases), deaths=max(deaths),new_deaths=sum(new_deaths), days_since_case100=max(days_since_case100), days_since_death10=max(days_since_death10))
 as.data.frame(continent_week)
@@ -420,12 +433,13 @@ ui <- bootstrapPage(
                                           h3(textOutput("reactive_case_count"), align = "right"),
                                           h4(textOutput("reactive_death_count"), align = "right"),
                                           span(h4(textOutput("reactive_recovered_count"), align = "right"), style="color:#006d2c"),
+                                          span(h4(textOutput("reactive_new_cases_24h"), align = "right"), style="color:#b4333d"),
                                           span(h4(textOutput("reactive_active_count"), align = "right"), style="color:#cc4c02"),
                                           h6(textOutput("clean_date_reactive"), align = "right"),
                                           h6(textOutput("reactive_country_count"), align = "right"),
                                           tags$i(h6("Actualizado diariamente. Para actualizaciones de última hora visite: ", tags$a(href="https://gisanddata.maps.arcgis.com/apps/opsdashboard/index.html#/bda7594740fd40299423467b48e9ecf6", "Johns Hopkins COVID-19 dashboard."),tags$br(),
                                                     tags$a(href="https://covid19.gob.sv/", "sitio oficial de El Salvador."))),
-                                          tags$i(h6("Los casos confirmados presentan variación debido el reporte de cada país.")),
+                                          tags$i(h6("Los casos confirmados presentan variación debido al reporte de cada país.")),
                                           plotOutput("epi_curve", height="130px", width="100%"),
                                           plotOutput("cumulative_plot", height="130px", width="100%"),
 
@@ -453,7 +467,8 @@ ui <- bootstrapPage(
                                             multiple = FALSE),
 
                                 pickerInput("region_select", "País/Región:",
-                                            choices = as.character(cv_today_150[order(-cv_today_150$cases),]$country),
+                                           # choices = as.character(cv_today_150[order(-cv_today_150$cases),]$country),
+                                            choices = as.character(cv_today_150$country),
                                             options = list(`actions-box` = TRUE, `none-selected-text` = "Please make a selection!"),
                                             selected = c("El Salvador", "Guatemala", "USA", "Mexico" ,"Spain", "Honduras", "Costa Rica", "Panama", "Mainland China"),
                                             multiple = TRUE),
@@ -476,6 +491,7 @@ ui <- bootstrapPage(
                                     tabPanel("Diarios", plotlyOutput("country_plot")),
                                     tabPanel("Semanal", plotlyOutput("country_plot_w")),
                                     tabPanel("Acumulados", plotlyOutput("country_plot_cumulative")),
+                                    tabPanel("Casos por 100,000", plotlyOutput("country100k")),
                                     tabPanel("Acumulados (log10)", plotlyOutput("country_plot_cumulative_log"))
                                 )
                             )
@@ -682,7 +698,7 @@ server = function(input, output, session) {
     })
 
     output$reactive_new_cases_24h <- renderText({
-        paste0((cv_aggregated %>% filter(date == input$plot_date & region=="Global"))$new, " nuevos en las últimas 24 hrs.")
+        paste0(prettyNum((cv_aggregated %>% filter(date == input$plot_date & region=="Global"))$new, big.mark=","), " nuevos en las últimas 24 hrs.")
     })
 
     output$mymap <- renderLeaflet({
@@ -741,7 +757,7 @@ server = function(input, output, session) {
 
         if (input$level_select=="Country") {
             updatePickerInput(session = session, inputId = "region_select",
-                              choices = as.character(cv_today_150[order(-cv_today_150$cases),]$country),
+                              choices = as.character(cv_today_150$country),
                               selected = cv_today_150$country)
         }
     }, ignoreInit = TRUE)
@@ -793,14 +809,33 @@ server = function(input, output, session) {
             db_w$outcome = db_w$cases
             db_w$new_outcome = db_w$new_cases
         }
-
         if (input$outcome_select=="Deaths") {
             db_w$outcome = db_w$deaths
             db_w$new_outcome = db_w$new_deaths
         }
         db_w %>% filter(region %in% input$region_select)
     })
-
+    # reactive for bar chart
+    country_reactive_db_k = reactive({
+        if (input$level_select=="Global") {
+            print("Gráfica no disponible para este nivel.") 
+        }
+        if (input$level_select=="Continent") {
+            print("Gráfica no disponible para este nivel.") 
+        }
+        if (input$level_select=="Country") {
+            cv_today_150$region = cv_today_150$country
+         #   db_k$region = db_k$country
+        }
+        if (input$outcome_select=="Cases") {
+            cv_today_150$outcome = cv_today_150$per100k
+        }
+        if (input$outcome_select=="Deaths") {
+            print("Gráfica no disponible para este nivel.") 
+        }
+        cv_today_150 %>% filter(region %in% input$region_select)
+    })
+    
     # country-specific plots
     output$country_plot <- renderPlotly({
         country_cases_plot(country_reactive_db(), start_point=input$start_date)
@@ -819,6 +854,11 @@ server = function(input, output, session) {
     # country-specific plots
     output$country_plot_cumulative_log <- renderPlotly({
         country_cases_cumulative_log(country_reactive_db(), start_point=input$start_date)
+    })
+    
+    # country bar chart per 100k
+    output$country100k <- renderPlotly({
+        cases_per100k(country_reactive_db_k(), start_point=input$start_date)
     })
     
     # ESA comparison plots
