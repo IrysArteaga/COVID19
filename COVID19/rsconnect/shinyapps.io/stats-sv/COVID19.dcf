@@ -5,8 +5,9 @@ account: stats-sv
 server: shinyapps.io
 hostUrl: https://api.shinyapps.io/v1
 appId: 2141740
-bundleId: 3039070
+bundleId: 3175920
 url: https://stats-sv.shinyapps.io/COVID19/
-when: 1587392353.06605
+when: 1590086324.71053
 asMultiple: FALSE
 asStatic: FALSE
+ignoredFiles: ts.R|var.RData
